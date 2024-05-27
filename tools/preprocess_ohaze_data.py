@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 if __name__ == '__main__':
     ohaze_root = OHAZE_ROOT
-    crop_size = 512
+    crop_size = 256
 
     ori_root = os.path.join(ohaze_root, r'tmp')
     ori_haze_root = os.path.join(ori_root, 'hazy')

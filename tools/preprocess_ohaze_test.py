@@ -11,12 +11,13 @@ MODE="test"
 if __name__ == '__main__':
     ohaze_root = OHAZE_ROOT
     crop_size = 512
+    result_foldername = f"{MODE}_crop_{str(crop_size)}"
 
-    ori_root = os.path.join(ohaze_root, '# O-HAZY NTIRE 2018')
+    ori_root = os.path.join(ohaze_root, r'tmp')
     ori_haze_root = os.path.join(ori_root, 'hazy')
     ori_gt_root = os.path.join(ori_root, 'GT')
 
-    patch_root = os.path.join(ohaze_root, MODE)
+    patch_root = os.path.join(ohaze_root, result_foldername)
     patch_haze_path = os.path.join(patch_root, 'hazy')
     patch_gt_path = os.path.join(patch_root, 'gt')
 
