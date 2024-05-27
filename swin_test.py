@@ -1,4 +1,5 @@
 # coding: utf-8
+# CUDA_VISIBLE_DEVICES=2
 import os
 
 import numpy as np
@@ -8,7 +9,7 @@ from torchvision import transforms
 
 from tools.config import TEST_SOTS_ROOT, OHAZE_ROOT
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
-from swin import dehazeformer_b
+from swin import dehazeformer_b, single
 from datasets import SotsDataset, OHazeDataset
 from torch.utils.data import DataLoader
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
@@ -43,7 +44,7 @@ def main():
         for name, root in to_test.items():
             if 'O-Haze' in name:
                 net = dehazeformer_b().cuda()
-                dataset = OHazeDataset(root, 'test')
+                dataset = OHazeDataset(root, 'test_crop_256')
             else:
                 raise NotImplementedError
 
@@ -51,10 +52,12 @@ def main():
 
             if len(args['snapshot']) > 0:
                 print('load snapshot \'%s\' for testing' % args['snapshot'])
-                net.load_state_dict(torch.load(os.path.join(ckpt_path, exp_name, args['snapshot'] + '.pth')))
+                net.load_state_dict(single(
+                    os.path.join(ckpt_path, exp_name, args['snapshot'] + '.pth')
+                ))
 
             net.eval()
-            dataloader = DataLoader(dataset, batch_size=1)
+            dataloader = DataLoader(dataset, batch_size=96, num_workers=8, shuffle=False)
 
             psnrs, ssims = [], []
             loss_record = AvgMeter()
@@ -85,14 +88,14 @@ def main():
                     ssim = structural_similarity(gt, r, data_range=1, multichannel=True, channel_axis=2,
                                                  gaussian_weights=True, sigma=1.5, use_sample_covariance=False)
                     ssims.append(ssim)
-                    print('predicting for {} ({}/{}) [{}]: PSNR {:.4f}, SSIM {:.4f}'
-                          .format(name, idx + 1, len(dataloader), fs[i], psnr, ssim))
+                    # print('predicting for {} ({}/{}) [{}]: PSNR {:.4f}, SSIM {:.4f}'
+                    #       .format(name, idx + 1, len(dataloader), fs[i], psnr, ssim))
 
                 for r, f in zip(res.cpu(), fs):
                     to_pil(r).save(
                         os.path.join(ckpt_path, exp_name,
                                      '(%s) %s_%s' % (exp_name, name, args['snapshot']), '%s.png' % f))
-
+                print('[iter %d in %d]' % (idx + 1, len(dataloader)))
             print(f"[{name}] L1: {loss_record.avg:.6f}, PSNR: {np.mean(psnrs):.6f}, SSIM: {np.mean(ssims):.6f}")
 
 
