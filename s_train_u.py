@@ -10,7 +10,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 import torch.cuda.amp as amp
 
-from swin import dehazeformer_b, single, dehazeformer_t
+from swin import dehazeformer_u, single, dehazeformer_t
 from tools.config import OHAZE_ROOT
 from ohaze_datasets import OHazeSPDataset
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--ckpt-path', default='./ckpt', help='checkpoint path')
     parser.add_argument(
         '--exp-name',
-        default='256-1000-T1',
+        default='256-1000-U1',
         help='experiment name.')
     args = parser.parse_args()
 
@@ -36,20 +36,20 @@ cfgs = {
     'use_physical': True,
     'use_clahe': True,
     'epochs': 1000,
-    'train_batch_size': 32,
+    'train_batch_size': 48,
     'last_iter': 0,
-    'lr': 6e-4,
+    'lr': 8e-4,
     'lr_decay': 0.9,
     'weight_decay': 2e-5,
     'momentum': 0.9,
     'snapshot': '',
-    'val_freq': 1,
+    'val_freq': 2,
     'crop_size': 256,
 }
 
 
 def main():
-    net = dehazeformer_t().cuda().train()
+    net = dehazeformer_u().cuda().train()
 
     optimizer = torch.optim.AdamW(net.parameters(), lr=cfgs['lr'])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfgs['epochs'], eta_min=cfgs['lr'] * 1e-2)
@@ -158,11 +158,11 @@ if __name__ == '__main__':
     # torch.cuda.set_device(int(args.gpus))
 
     train_dataset = OHazeSPDataset(OHAZE_ROOT, f'train_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
-    train_loader = DataLoader(train_dataset, batch_size=cfgs['train_batch_size'], num_workers=8,
+    train_loader = DataLoader(train_dataset, batch_size=cfgs['train_batch_size'], num_workers=36,
                               shuffle=True, drop_last=True)
 
     val_dataset = OHazeSPDataset(OHAZE_ROOT, f'val_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
-    val_loader = DataLoader(val_dataset, batch_size=144, num_workers=8, shuffle=False, drop_last=False)
+    val_loader = DataLoader(val_dataset, batch_size=192, num_workers=36, shuffle=False, drop_last=False)
 
     criterion = nn.L1Loss().cuda()
     log_path = os.path.join(args.ckpt_path, args.exp_name, str(datetime.datetime.now()) + '.txt')

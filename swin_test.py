@@ -9,7 +9,7 @@ from torchvision import transforms
 
 from tools.config import HAZERD_ROOT, OHAZE_ROOT
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
-from swin import dehazeformer_b, dehazeformer_t, single
+from swin import dehazeformer_b, dehazeformer_u, single
 from ohaze_datasets import HazeRDDataset, OHazeDataset
 from torch.utils.data import DataLoader
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
@@ -27,12 +27,13 @@ use_clahe = True
 args = {
     # 'snapshot': 'iter_40000_loss_0.01230_lr_0.000000',
     # 'snapshot': 'iter_2000_loss_0.05532_lr_0.000164',
-    'snapshot': 'dehazeformer-b',
+    # 'snapshot': 'dehazeformer-b',
+    'snapshot': '',
 }
 
 to_test = {
-    'hazerd': HAZERD_ROOT,
-    # 'O-Haze': OHAZE_ROOT, 
+    # 'hazerd': HAZERD_ROOT,
+    'O-Haze': OHAZE_ROOT, 
 }
 
 to_pil = transforms.ToPILImage()
@@ -44,8 +45,8 @@ def main():
 
         for name, root in to_test.items():
             if 'O-Haze' in name:
-                net = dehazeformer_t().cuda()
-                dataset = OHazeDataset(root, 'test_crop_512', use_clahe=use_clahe)
+                net = dehazeformer_u().cuda()
+                dataset = OHazeDataset(root, 'test_crop_256', use_clahe=use_clahe)
             elif 'hazerd' in name:
                 net = dehazeformer_b().cuda()
                 dataset = HazeRDDataset(root, 'test_crop_512', use_clahe=use_clahe)
@@ -61,7 +62,7 @@ def main():
                 ))
 
             net.eval()
-            dataloader = DataLoader(dataset, batch_size=28, num_workers=8, shuffle=False)
+            dataloader = DataLoader(dataset, batch_size=240, num_workers=32, shuffle=False)
 
             psnrs, ssims = [], []
             loss_record = AvgMeter()

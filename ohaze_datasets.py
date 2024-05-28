@@ -296,6 +296,28 @@ class OHazeDataset(data.Dataset):
     def __len__(self):
         return len(self.imgs)
     
+class OHazeSPDataset(data.Dataset):
+    def __init__(self, root, mode, use_clahe=False):
+        self.root = root
+        self.mode = mode
+        self.imgs = make_dataset_ohaze(root, mode)
+        self.use_clahe = use_clahe
+        self.clahe = CLAHE(clip_limit=1.0, tile_grid_size=(16, 16), balance_percent=2.0)
+
+    def __getitem__(self, index):
+        haze_path, gt_path = self.imgs[index]
+        name = os.path.splitext(os.path.split(haze_path)[1])[0]
+
+        img = Image.open(haze_path).convert('RGB')
+        gt = Image.open(gt_path).convert('RGB')
+
+        if self.use_clahe:
+            img = self.clahe(img)
+
+        return to_tensor(img), to_tensor(gt), name
+
+    def __len__(self):
+        return len(self.imgs)
 
 class HazeRDDataset(data.Dataset):
     def __init__(self, root, mode, use_clahe=False):

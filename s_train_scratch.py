@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--ckpt-path', default='./ckpt', help='checkpoint path')
     parser.add_argument(
         '--exp-name',
-        default='256-1000-TRUE',
+        default='256-1000-FALSE',
         help='experiment name.')
     args = parser.parse_args()
 
@@ -34,7 +34,7 @@ def parse_args():
 
 cfgs = {
     'use_physical': True,
-    'use_clahe': True,
+    'use_clahe': False,
     'epochs': 1000,
     'train_batch_size': 32,
     'last_iter': 0,
@@ -162,7 +162,7 @@ if __name__ == '__main__':
                               shuffle=True, drop_last=True)
 
     val_dataset = OHazeDataset(OHAZE_ROOT, f'val_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
-    val_loader = DataLoader(val_dataset, batch_size=100, num_workers=8, shuffle=False, drop_last=False)
+    val_loader = DataLoader(val_dataset, batch_size=144, num_workers=8, shuffle=False, drop_last=False)
 
     criterion = nn.L1Loss().cuda()
     log_path = os.path.join(args.ckpt_path, args.exp_name, str(datetime.datetime.now()) + '.txt')

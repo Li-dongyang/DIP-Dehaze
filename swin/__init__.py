@@ -1,2 +1,2 @@
-from .dehazeformer import dehazeformer_t, dehazeformer_s, dehazeformer_b, dehazeformer_d, dehazeformer_w, dehazeformer_m, dehazeformer_l, DehazeFormer
+from .dehazeformer import dehazeformer_u, dehazeformer_t, dehazeformer_s, dehazeformer_b, dehazeformer_d, dehazeformer_w, dehazeformer_m, dehazeformer_l, DehazeFormer
 from .load_utils import single, CLAHE

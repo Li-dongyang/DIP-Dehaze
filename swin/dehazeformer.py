@@ -489,6 +489,14 @@ class DehazeFormer(nn.Module):
 		x = x[:, :, :H, :W]
 		return x
 
+def dehazeformer_u():
+    return DehazeFormer(
+		embed_dims=[16, 32, 64, 32, 16],
+		mlp_ratios=[2., 4., 4., 2., 2.],
+		depths=[4, 4, 4, 2, 2],
+		num_heads=[2, 4, 8, 1, 1],
+		attn_ratio=[0, 1/2, 1, 0, 0],
+		conv_type=['DWConv', 'DWConv', 'DWConv', 'DWConv', 'DWConv'])
 
 def dehazeformer_t():
     return DehazeFormer(
