@@ -7,13 +7,12 @@ from tqdm import tqdm
 import torch
 from torch import nn
 from torch import optim
-from torch.backends import cudnn
 from torch.utils.data import DataLoader
 import torch.cuda.amp as amp
 
-from model import DM2FNet_woPhy
+from swin import dehazeformer_t, single
 from tools.config import OHAZE_ROOT
-from datasets import OHazeDataset
+from ohaze_datasets import OHazeDataset
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
 
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
@@ -26,7 +25,7 @@ def parse_args():
     parser.add_argument('--ckpt-path', default='./ckpt', help='checkpoint path')
     parser.add_argument(
         '--exp-name',
-        default='O-Haze',
+        default='O-Haze-Swin-R1',
         help='experiment name.')
     args = parser.parse_args()
 
@@ -35,22 +34,21 @@ def parse_args():
 
 cfgs = {
     'use_physical': True,
-    'iter_num': 20000,
-    'train_batch_size': 16,
+    'iter_num': 10000,
+    'train_batch_size': 128,
     'last_iter': 0,
     'lr': 2e-4,
     'lr_decay': 0.9,
     'weight_decay': 2e-5,
     'momentum': 0.9,
     'snapshot': '',
-    'val_freq': 2000,
-    'crop_size': 512,
+    'val_freq': 1000,
+    'crop_size': 256,
 }
 
 
 def main():
-    net = DM2FNet_woPhy().cuda().train()
-    # net = DataParallel(net)
+    net = dehazeformer_t().cuda().train()
 
     optimizer = optim.Adam([
         {'params': [param for name, param in net.named_parameters()
@@ -69,6 +67,11 @@ def main():
                                                           args.exp_name, cfgs['snapshot'] + '_optim.pth')))
         optimizer.param_groups[0]['lr'] = 2 * cfgs['lr']
         optimizer.param_groups[1]['lr'] = cfgs['lr']
+    else:
+        net.load_state_dict(single(
+            os.path.join(args.ckpt_path, "O-Haze-Swin-R0", 'dehazeformer-t.pth')
+        ))
+
 
     check_mkdir(args.ckpt_path)
     check_mkdir(os.path.join(args.ckpt_path, args.exp_name))
@@ -84,9 +87,6 @@ def train(net, optimizer):
 
     while curr_iter <= cfgs['iter_num']:
         train_loss_record = AvgMeter()
-        loss_x_jf_record = AvgMeter()
-        loss_x_j1_record, loss_x_j2_record = AvgMeter(), AvgMeter()
-        loss_x_j3_record, loss_x_j4_record = AvgMeter(), AvgMeter()
 
         for data in train_loader:
             optimizer.param_groups[0]['lr'] = 2 * cfgs['lr'] * (1 - float(curr_iter) / cfgs['iter_num']) \
@@ -103,16 +103,8 @@ def train(net, optimizer):
             optimizer.zero_grad()
 
             with amp.autocast():
-                x_jf, x_j1, x_j2, x_j3, x_j4 = net(haze)
-
-                loss_x_jf = criterion(x_jf, gt)
-                loss_x_j1 = criterion(x_j1, gt)
-                loss_x_j2 = criterion(x_j2, gt)
-                loss_x_j3 = criterion(x_j3, gt)
-                loss_x_j4 = criterion(x_j4, gt)
-
-                loss = loss_x_jf + loss_x_j1 + loss_x_j2 + loss_x_j3 + loss_x_j4
-
+                output = net(haze)
+                loss = criterion(output, gt)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -122,18 +114,10 @@ def train(net, optimizer):
 
             train_loss_record.update(loss.item(), batch_size)
 
-            loss_x_jf_record.update(loss_x_jf.item(), batch_size)
-            loss_x_j1_record.update(loss_x_j1.item(), batch_size)
-            loss_x_j2_record.update(loss_x_j2.item(), batch_size)
-            loss_x_j3_record.update(loss_x_j3.item(), batch_size)
-            loss_x_j4_record.update(loss_x_j4.item(), batch_size)
-
             curr_iter += 1
 
-            log = '[iter %d], [train loss %.5f], [loss_x_fusion %.5f], [loss_x_j1 %.5f], ' \
-                  '[loss_x_j2 %.5f], [loss_x_j3 %.5f], [loss_x_j4 %.5f], [lr %.13f]' % \
-                  (curr_iter, train_loss_record.avg, loss_x_jf_record.avg,
-                   loss_x_j1_record.avg, loss_x_j2_record.avg, loss_x_j3_record.avg, loss_x_j4_record.avg,
+            log = '[iter %d], [train loss %.5f], [lr %.13f]' % \
+                  (curr_iter, train_loss_record.avg, 
                    optimizer.param_groups[1]['lr'])
             print(log)
             open(log_path, 'a').write(log + '\n')
@@ -158,7 +142,7 @@ def validate(net, curr_iter, optimizer):
             haze, gt, _ = data
             haze, gt = haze.cuda(), gt.cuda()
 
-            dehaze = sliding_forward(net, haze)
+            dehaze = net(haze)
 
             loss = criterion(dehaze, gt)
             loss_record.update(loss.item(), haze.size(0))
@@ -189,15 +173,15 @@ if __name__ == '__main__':
     args = parse_args()
 
     # os.environ['CUDA_VISIBLE_DEVICES'] = args.gpus
-    cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = True
     # torch.cuda.set_device(int(args.gpus))
 
-    train_dataset = OHazeDataset(OHAZE_ROOT, 'train_crop_512')
-    train_loader = DataLoader(train_dataset, batch_size=cfgs['train_batch_size'], num_workers=4,
+    train_dataset = OHazeDataset(OHAZE_ROOT, 'train_crop_256')
+    train_loader = DataLoader(train_dataset, batch_size=cfgs['train_batch_size'], num_workers=8,
                               shuffle=True, drop_last=True)
 
-    val_dataset = OHazeDataset(OHAZE_ROOT, 'val')
-    val_loader = DataLoader(val_dataset, batch_size=1)
+    val_dataset = OHazeDataset(OHAZE_ROOT, 'val_crop_256')
+    val_loader = DataLoader(val_dataset, batch_size=576, num_workers=8, shuffle=False, drop_last=False)
 
     criterion = nn.L1Loss().cuda()
     log_path = os.path.join(args.ckpt_path, args.exp_name, str(datetime.datetime.now()) + '.txt')

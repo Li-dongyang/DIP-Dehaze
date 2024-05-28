@@ -131,7 +131,6 @@ class WindowAttention(nn.Module):
 		relative_position_bias = self.meta(self.relative_positions)
 		relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
 		attn = attn + relative_position_bias.unsqueeze(0)
-
 		attn = self.softmax(attn)
 
 		x = (attn @ v).transpose(1, 2).reshape(B_, N, self.dim)

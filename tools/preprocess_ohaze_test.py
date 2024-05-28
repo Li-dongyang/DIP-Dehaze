@@ -5,8 +5,8 @@ from config import OHAZE_ROOT
 from math import ceil
 from tqdm import tqdm
 
-# MODE="val"
-MODE="test"
+MODE="val"
+# MODE="test"
 
 if __name__ == '__main__':
     ohaze_root = OHAZE_ROOT
