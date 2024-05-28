@@ -11,6 +11,8 @@ import torch.utils.data as data
 from torchvision import transforms
 from torchvision.transforms import ToTensor
 
+from swin import CLAHE
+
 to_tensor = ToTensor()
 
 
@@ -255,10 +257,12 @@ class SotsDataset(data.Dataset):
 
 
 class OHazeDataset(data.Dataset):
-    def __init__(self, root, mode):
+    def __init__(self, root, mode, use_clahe=False):
         self.root = root
         self.mode = mode
         self.imgs = make_dataset_ohaze(root, mode)
+        self.use_clahe = use_clahe
+        self.clahe = CLAHE(clip_limit=1.0, tile_grid_size=(16, 16), balance_percent=2.0)
 
     def __getitem__(self, index):
         haze_path, gt_path = self.imgs[index]
@@ -275,6 +279,9 @@ class OHazeDataset(data.Dataset):
 
             rotate_degree = np.random.choice([-90, 0, 90, 180])
             img, gt = img.rotate(rotate_degree, Image.BILINEAR), gt.rotate(rotate_degree, Image.BILINEAR)
+
+        if self.use_clahe:
+            img = self.clahe(img)
 
         return to_tensor(img), to_tensor(gt), name
 

@@ -35,15 +35,15 @@ def parse_args():
 cfgs = {
     'use_physical': True,
     'use_clahe': True,
-    'epochs': 30,
-    'train_batch_size': 32,
+    'iter_num': 20000,
+    'train_batch_size': 16,
     'last_iter': 0,
-    'lr': 4e-4,
+    'lr': 2e-4,
     'lr_decay': 0.9,
     'weight_decay': 2e-5,
     'momentum': 0.9,
     'snapshot': '',
-    'val_freq': 2,
+    'val_freq': 2000,
     'crop_size': 512,
 }
 
@@ -51,35 +51,46 @@ cfgs = {
 def main():
     net = dehazeformer_t().cuda().train()
 
-    optimizer = torch.optim.AdamW(net.parameters(), lr=cfgs['lr'])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfgs['iter_num'], eta_min=cfgs['lr'] * 1e-2)
-	
-    # if len(cfgs['snapshot']) > 0:
-    #     print('training resumes from \'%s\'' % cfgs['snapshot'])
-    #     net.load_state_dict(torch.load(os.path.join(args.ckpt_path,
-    #                                                 args.exp_name, cfgs['snapshot'] + '.pth')))
-    #     optimizer.load_state_dict(torch.load(os.path.join(args.ckpt_path,
-    #                                                       args.exp_name, cfgs['snapshot'] + '_optim.pth')))
-    #     optimizer.param_groups[0]['lr'] = 2 * cfgs['lr']
-    #     optimizer.param_groups[1]['lr'] = cfgs['lr']
+    optimizer = optim.Adam([
+        {'params': [param for name, param in net.named_parameters()
+                    if name[-4:] == 'bias' and param.requires_grad],
+         'lr': 2 * cfgs['lr']},
+        {'params': [param for name, param in net.named_parameters()
+                    if name[-4:] != 'bias' and param.requires_grad],
+         'lr': cfgs['lr'], 'weight_decay': cfgs['weight_decay']}
+    ])
+
+    if len(cfgs['snapshot']) > 0:
+        print('training resumes from \'%s\'' % cfgs['snapshot'])
+        net.load_state_dict(torch.load(os.path.join(args.ckpt_path,
+                                                    args.exp_name, cfgs['snapshot'] + '.pth')))
+        optimizer.load_state_dict(torch.load(os.path.join(args.ckpt_path,
+                                                          args.exp_name, cfgs['snapshot'] + '_optim.pth')))
+        optimizer.param_groups[0]['lr'] = 2 * cfgs['lr']
+        optimizer.param_groups[1]['lr'] = cfgs['lr']
 
 
     check_mkdir(args.ckpt_path)
     check_mkdir(os.path.join(args.ckpt_path, args.exp_name))
     open(log_path, 'w').write(str(cfgs) + '\n\n')
 
-    train(net, optimizer, scheduler)
+    train(net, optimizer)
 
 
-def train(net, optimizer, scheduler):
+def train(net, optimizer):
     curr_iter = cfgs['last_iter']
     scaler = amp.GradScaler()
     torch.cuda.empty_cache()
 
-    while curr_iter <= cfgs['epochs']:
+    while curr_iter <= cfgs['iter_num']:
         train_loss_record = AvgMeter()
 
         for data in train_loader:
+            optimizer.param_groups[0]['lr'] = 2 * cfgs['lr'] * (1 - float(curr_iter) / cfgs['iter_num']) \
+                                              ** cfgs['lr_decay']
+            optimizer.param_groups[1]['lr'] = cfgs['lr'] * (1 - float(curr_iter) / cfgs['iter_num']) \
+                                              ** cfgs['lr_decay']
+
             haze, gt, _ = data
 
             batch_size = haze.size(0)
@@ -101,6 +112,7 @@ def train(net, optimizer, scheduler):
 
             train_loss_record.update(loss.item(), batch_size)
 
+            curr_iter += 1
 
             log = '[iter %d], [train loss %.5f], [lr %.13f]' % \
                   (curr_iter, train_loss_record.avg, 
@@ -112,9 +124,9 @@ def train(net, optimizer, scheduler):
             # if (curr_iter + 1) % cfgs['val_freq'] == 0:
                 validate(net, curr_iter, optimizer)
                 torch.cuda.empty_cache()
-        
-        curr_iter += 1
-        scheduler.step()
+
+            if curr_iter > cfgs['iter_num']:
+                break
 
 
 def validate(net, curr_iter, optimizer):

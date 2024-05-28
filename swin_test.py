@@ -20,12 +20,12 @@ torch.manual_seed(100)
 # torch.cuda.set_device(0)
 
 ckpt_path = './ckpt'
-# exp_name = 'RESIDE_ITS'
 exp_name = 'O-Haze-Swin-R0'
+# exp_name = 'O-Haze-Swin-T1'
 
 args = {
     # 'snapshot': 'iter_40000_loss_0.01230_lr_0.000000',
-    # 'snapshot': 'iter_2200_loss_0.05614_lr_0.000180',
+    # 'snapshot': 'iter_2000_loss_0.05532_lr_0.000164',
     'snapshot': 'dehazeformer-t',
 }
 
@@ -44,7 +44,7 @@ def main():
         for name, root in to_test.items():
             if 'O-Haze' in name:
                 net = dehazeformer_t().cuda()
-                dataset = OHazeDataset(root, 'test_crop_512')
+                dataset = OHazeDataset(root, 'test_crop_512', use_clahe=True)
             else:
                 raise NotImplementedError
 
@@ -57,7 +57,7 @@ def main():
                 ))
 
             net.eval()
-            dataloader = DataLoader(dataset, batch_size=32, num_workers=8, shuffle=False)
+            dataloader = DataLoader(dataset, batch_size=48, num_workers=8, shuffle=False)
 
             psnrs, ssims = [], []
             loss_record = AvgMeter()
