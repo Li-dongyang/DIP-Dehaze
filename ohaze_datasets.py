@@ -55,6 +55,14 @@ def make_dataset_ohaze(root: str, mode: str):
                          os.path.join(root, mode, 'gt', gt_name)])
     return img_list
 
+def make_dataset_hazerd(root: str, mode: str):
+    img_list = []
+    for img_name in os.listdir(os.path.join(root, mode, 'hazy')):
+        gt_name = img_name
+        assert os.path.exists(os.path.join(root, mode, 'gt', gt_name))
+        img_list.append([os.path.join(root, mode, 'hazy', img_name),
+                         os.path.join(root, mode, 'gt', gt_name)])
+    return img_list
 
 def make_dataset_oihaze_train(root, suffix):
     items = []
@@ -287,6 +295,33 @@ class OHazeDataset(data.Dataset):
 
     def __len__(self):
         return len(self.imgs)
+    
+
+class HazeRDDataset(data.Dataset):
+    def __init__(self, root, mode, use_clahe=False):
+        self.root = root
+        self.mode = mode
+        if 'train' in self.mode:
+            raise NotImplementedError('HazeRD dataset only supports test mode')
+        self.imgs = make_dataset_hazerd(root, mode)
+        self.use_clahe = use_clahe
+        self.clahe = CLAHE(clip_limit=1.0, tile_grid_size=(16, 16), balance_percent=2.0)
+
+    def __getitem__(self, index):
+        haze_path, gt_path = self.imgs[index]
+        name = os.path.splitext(os.path.split(haze_path)[1])[0]
+
+        img = Image.open(haze_path).convert('RGB')
+        gt = Image.open(gt_path).convert('RGB')
+        
+        if self.use_clahe:
+            img = self.clahe(img)
+
+        return to_tensor(img), to_tensor(gt), name
+
+    def __len__(self):
+        return len(self.imgs)
+
 
 
 class OIHaze(data.Dataset):
@@ -322,6 +357,8 @@ class OIHaze(data.Dataset):
 
     def __len__(self):
         return len(self.img_name_list)
+    
+
 
 
 class OIHaze5(data.Dataset):

@@ -10,7 +10,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 import torch.cuda.amp as amp
 
-from swin import dehazeformer_t, single
+from swin import dehazeformer_b, single
 from tools.config import OHAZE_ROOT
 from ohaze_datasets import OHazeDataset
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--ckpt-path', default='./ckpt', help='checkpoint path')
     parser.add_argument(
         '--exp-name',
-        default='O-Haze-Swin-2W-TRUE',
+        default='256-1000-TRUE',
         help='experiment name.')
     args = parser.parse_args()
 
@@ -35,62 +35,52 @@ def parse_args():
 cfgs = {
     'use_physical': True,
     'use_clahe': True,
-    'iter_num': 20000,
-    'train_batch_size': 16,
+    'epochs': 1000,
+    'train_batch_size': 32,
     'last_iter': 0,
     'lr': 2e-4,
     'lr_decay': 0.9,
     'weight_decay': 2e-5,
     'momentum': 0.9,
     'snapshot': '',
-    'val_freq': 2000,
-    'crop_size': 512,
+    'val_freq': 1,
+    'crop_size': 256,
 }
 
 
 def main():
-    net = dehazeformer_t().cuda().train()
+    net = dehazeformer_b().cuda().train()
 
-    optimizer = optim.Adam([
-        {'params': [param for name, param in net.named_parameters()
-                    if name[-4:] == 'bias' and param.requires_grad],
-         'lr': 2 * cfgs['lr']},
-        {'params': [param for name, param in net.named_parameters()
-                    if name[-4:] != 'bias' and param.requires_grad],
-         'lr': cfgs['lr'], 'weight_decay': cfgs['weight_decay']}
-    ])
-
-    if len(cfgs['snapshot']) > 0:
-        print('training resumes from \'%s\'' % cfgs['snapshot'])
-        net.load_state_dict(torch.load(os.path.join(args.ckpt_path,
-                                                    args.exp_name, cfgs['snapshot'] + '.pth')))
-        optimizer.load_state_dict(torch.load(os.path.join(args.ckpt_path,
-                                                          args.exp_name, cfgs['snapshot'] + '_optim.pth')))
-        optimizer.param_groups[0]['lr'] = 2 * cfgs['lr']
-        optimizer.param_groups[1]['lr'] = cfgs['lr']
+    optimizer = torch.optim.AdamW(net.parameters(), lr=cfgs['lr'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfgs['epochs'], eta_min=cfgs['lr'] * 1e-2)
+	
+    # if len(cfgs['snapshot']) > 0:
+    #     print('training resumes from \'%s\'' % cfgs['snapshot'])
+    #     net.load_state_dict(torch.load(os.path.join(args.ckpt_path,
+    #                                                 args.exp_name, cfgs['snapshot'] + '.pth')))
+    #     optimizer.load_state_dict(torch.load(os.path.join(args.ckpt_path,
+    #                                                       args.exp_name, cfgs['snapshot'] + '_optim.pth')))
+    #     optimizer.param_groups[0]['lr'] = 2 * cfgs['lr']
+    #     optimizer.param_groups[1]['lr'] = cfgs['lr']
 
 
     check_mkdir(args.ckpt_path)
     check_mkdir(os.path.join(args.ckpt_path, args.exp_name))
     open(log_path, 'w').write(str(cfgs) + '\n\n')
 
-    train(net, optimizer)
+    train(net, optimizer, scheduler)
 
 
-def train(net, optimizer):
+def train(net, optimizer, scheduler):
     curr_iter = cfgs['last_iter']
     scaler = amp.GradScaler()
     torch.cuda.empty_cache()
 
-    while curr_iter <= cfgs['iter_num']:
+    while curr_iter <= cfgs['epochs']:
+        curr_iter += 1
         train_loss_record = AvgMeter()
 
-        for data in train_loader:
-            optimizer.param_groups[0]['lr'] = 2 * cfgs['lr'] * (1 - float(curr_iter) / cfgs['iter_num']) \
-                                              ** cfgs['lr_decay']
-            optimizer.param_groups[1]['lr'] = cfgs['lr'] * (1 - float(curr_iter) / cfgs['iter_num']) \
-                                              ** cfgs['lr_decay']
-
+        for data in tqdm(train_loader):
             haze, gt, _ = data
 
             batch_size = haze.size(0)
@@ -106,27 +96,19 @@ def train(net, optimizer):
             scaler.step(optimizer)
             scaler.update()
 
-            # loss.backward()
-            # optimizer.step()
-
-
             train_loss_record.update(loss.item(), batch_size)
 
-            curr_iter += 1
-
-            log = '[iter %d], [train loss %.5f], [lr %.13f]' % \
-                  (curr_iter, train_loss_record.avg, 
-                   optimizer.param_groups[1]['lr'])
-            print(log)
+            log = '[iter %d], [train loss %.5f]' % \
+                  (curr_iter, train_loss_record.avg)
+            # print(log)
             open(log_path, 'a').write(log + '\n')
 
-            if curr_iter == 1 or (curr_iter + 1) % cfgs['val_freq'] == 0:
-            # if (curr_iter + 1) % cfgs['val_freq'] == 0:
-                validate(net, curr_iter, optimizer)
-                torch.cuda.empty_cache()
-
-            if curr_iter > cfgs['iter_num']:
-                break
+        scheduler.step()
+        if curr_iter == 1 or (curr_iter) % cfgs['val_freq'] == 0:
+        # if (curr_iter + 1) % cfgs['val_freq'] == 0:
+            validate(net, curr_iter, optimizer)
+            torch.cuda.empty_cache()
+        
 
 
 def validate(net, curr_iter, optimizer):
@@ -155,9 +137,9 @@ def validate(net, curr_iter, optimizer):
                 psnr_record.update(psnr)
                 ssim_record.update(ssim)
 
-    snapshot_name = 'iter_%d_loss_%.5f_lr_%.6f' % (curr_iter + 1, loss_record.avg, optimizer.param_groups[1]['lr'])
+    snapshot_name = 'iter_%d_loss_%.5f_lr_%.6f' % (curr_iter, loss_record.avg, optimizer.param_groups[0]['lr'])
     log = '[validate]: [iter {}], [loss {:.5f}] [PSNR {:.4f}] [SSIM {:.4f}]'.format(
-        curr_iter + 1, loss_record.avg, psnr_record.avg, ssim_record.avg)
+        curr_iter, loss_record.avg, psnr_record.avg, ssim_record.avg)
     print(log)
     open(log_path, 'a').write(log + '\n')
     torch.save(net.state_dict(),
@@ -180,7 +162,7 @@ if __name__ == '__main__':
                               shuffle=True, drop_last=True)
 
     val_dataset = OHazeDataset(OHAZE_ROOT, f'val_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
-    val_loader = DataLoader(val_dataset, batch_size=144, num_workers=8, shuffle=False, drop_last=False)
+    val_loader = DataLoader(val_dataset, batch_size=100, num_workers=8, shuffle=False, drop_last=False)
 
     criterion = nn.L1Loss().cuda()
     log_path = os.path.join(args.ckpt_path, args.exp_name, str(datetime.datetime.now()) + '.txt')

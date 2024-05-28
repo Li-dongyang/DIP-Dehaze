@@ -6,10 +6,10 @@ import torch
 from torch import nn
 from torchvision import transforms
 
-from tools.config import TEST_SOTS_ROOT, OHAZE_ROOT
+from tools.config import HAZERD_ROOT, OHAZE_ROOT
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
 from model import DM2FNet, DM2FNet_woPhy
-from datasets import SotsDataset, OHazeDataset
+from ohaze_datasets import HazeRDDataset, OHazeDataset
 from torch.utils.data import DataLoader
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
@@ -29,7 +29,7 @@ args = {
 }
 
 to_test = {
-    # 'SOTS': TEST_SOTS_ROOT,
+    'hazerd': HAZERD_ROOT,
     'O-Haze': OHAZE_ROOT, 
 }
 
@@ -41,12 +41,12 @@ def main():
         criterion = nn.L1Loss().cuda()
 
         for name, root in to_test.items():
-            if 'SOTS' in name:
-                net = DM2FNet().cuda()
-                dataset = SotsDataset(root)
+            if 'hazerd' in name:
+                net = DM2FNet_woPhy().cuda()
+                dataset = HazeRDDataset(root, 'test_crop_512')
             elif 'O-Haze' in name:
                 net = DM2FNet_woPhy().cuda()
-                dataset = OHazeDataset(root, 'test')
+                dataset = OHazeDataset(root, 'test_crop_512')
             else:
                 raise NotImplementedError
 
