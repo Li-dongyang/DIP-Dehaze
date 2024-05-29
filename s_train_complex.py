@@ -12,7 +12,7 @@ import torch.cuda.amp as amp
 
 from swin import dehazeformer_u, single, dehazeformer_t
 from tools.config import OHAZE_ROOT
-from ohaze_datasets import OHazeSPDataset
+from ohaze_datasets import OHazeDataset
 from tools.utils import AvgMeter, check_mkdir, sliding_forward
 
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--ckpt-path', default='./ckpt', help='checkpoint path')
     parser.add_argument(
         '--exp-name',
-        default='512-COMPLEX-U',
+        default='512-COMPLEX-U106',
         help='experiment name.')
     args = parser.parse_args()
 
@@ -34,7 +34,7 @@ def parse_args():
 
 cfgs = {
     'use_physical': True,
-    'use_clahe': True,
+    'use_clahe': False,
     'epochs': 200,
     'train_batch_size': 16,
     'last_iter': 0,
@@ -155,12 +155,12 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
     # torch.cuda.set_device(int(args.gpus))
 
-    train_dataset = OHazeSPDataset(OHAZE_ROOT, f'train_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
-    train_loader = DataLoader(train_dataset, batch_size=cfgs['train_batch_size'], num_workers=36,
+    train_dataset = OHazeDataset(OHAZE_ROOT, f'train_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
+    train_loader = DataLoader(train_dataset, batch_size=cfgs['train_batch_size'], num_workers=8,
                               shuffle=True, drop_last=True)
 
-    val_dataset = OHazeSPDataset(OHAZE_ROOT, f'val_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
-    val_loader = DataLoader(val_dataset, batch_size=36, num_workers=16, shuffle=False, drop_last=False)
+    val_dataset = OHazeDataset(OHAZE_ROOT, f'val_crop_{cfgs["crop_size"]}', use_clahe=cfgs['use_clahe'])
+    val_loader = DataLoader(val_dataset, batch_size=36, num_workers=12, shuffle=False, drop_last=False)
 
     criterion = nn.L1Loss().cuda()
     log_path = os.path.join(args.ckpt_path, args.exp_name, str(datetime.datetime.now()) + '.txt')

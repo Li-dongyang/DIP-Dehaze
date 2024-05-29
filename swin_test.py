@@ -20,24 +20,24 @@ torch.manual_seed(100)
 # torch.cuda.set_device(0)
 
 ckpt_path = './ckpt'
-exp_name = 'O-Haze-Swin-R0'
-use_clahe = True
-# exp_name = 'O-Haze-Swin-T1'
+exp_name = '512-COMPLEX-U106'
+use_clahe = False
+crop_size = 256
 
 args = {
     # 'snapshot': 'iter_40000_loss_0.01230_lr_0.000000',
     # 'snapshot': 'iter_2000_loss_0.05532_lr_0.000164',
     # 'snapshot': 'dehazeformer-b',
-    'snapshot': '',
+    'snapshot': 'iter_92_loss_0.05306_lr_0.000340',
 }
-
+[]
 to_test = {
-    # 'hazerd': HAZERD_ROOT,
+    'hazerd': HAZERD_ROOT,
     'O-Haze': OHAZE_ROOT, 
 }
 
 to_pil = transforms.ToPILImage()
-
+test_bsz = 192 if crop_size == 256 else 40
 
 def main():
     with torch.no_grad():
@@ -46,10 +46,10 @@ def main():
         for name, root in to_test.items():
             if 'O-Haze' in name:
                 net = dehazeformer_u().cuda()
-                dataset = OHazeDataset(root, 'test_crop_256', use_clahe=use_clahe)
+                dataset = OHazeDataset(root, f'test_crop_{str(crop_size)}', use_clahe=use_clahe)
             elif 'hazerd' in name:
-                net = dehazeformer_b().cuda()
-                dataset = HazeRDDataset(root, 'test_crop_512', use_clahe=use_clahe)
+                net = dehazeformer_u().cuda()
+                dataset = HazeRDDataset(root, f'test_crop_{str(crop_size)}', use_clahe=use_clahe)
             else:
                 raise NotImplementedError
 
@@ -62,7 +62,7 @@ def main():
                 ))
 
             net.eval()
-            dataloader = DataLoader(dataset, batch_size=240, num_workers=32, shuffle=False)
+            dataloader = DataLoader(dataset, batch_size=test_bsz, num_workers=32, shuffle=False)
 
             psnrs, ssims = [], []
             loss_record = AvgMeter()
@@ -77,10 +77,7 @@ def main():
 
                 haze = haze.cuda()
 
-                if 'O-Haze' in name:
-                    res = sliding_forward(net, haze).detach()
-                else:
-                    res = net(haze).detach()
+                res = net(haze).detach()
 
                 loss = criterion(res, gts.cuda())
                 loss_record.update(loss.item(), haze.size(0))

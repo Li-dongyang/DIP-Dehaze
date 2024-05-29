@@ -15,17 +15,18 @@ from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '4'
 
-torch.manual_seed(2018)
+torch.manual_seed(100)
 # torch.cuda.set_device(0)
 
 ckpt_path = './ckpt'
-# exp_name = 'RESIDE_ITS'
-exp_name = 'O-Haze'
+exp_name = 'O-Haze-Swin-R0'
+use_clahe = False
+crop_size = 256
 
 args = {
     # 'snapshot': 'iter_40000_loss_0.01230_lr_0.000000',
     # 'snapshot': 'iter_19000_loss_0.04261_lr_0.000014',
-    'snapshot': 'iter_20000_loss_0.05083_lr_0.000000',
+    'snapshot': 'baseline-20000',
 }
 
 to_test = {
@@ -34,19 +35,19 @@ to_test = {
 }
 
 to_pil = transforms.ToPILImage()
-
+test_bsz = 1
 
 def main():
     with torch.no_grad():
         criterion = nn.L1Loss().cuda()
 
         for name, root in to_test.items():
-            if 'hazerd' in name:
+            if 'O-Haze' in name:
                 net = DM2FNet_woPhy().cuda()
-                dataset = HazeRDDataset(root, 'test_crop_512')
-            elif 'O-Haze' in name:
+                dataset = OHazeDataset(root, f'test_crop_{str(crop_size)}', use_clahe=use_clahe)
+            elif 'hazerd' in name:
                 net = DM2FNet_woPhy().cuda()
-                dataset = OHazeDataset(root, 'test_crop_512')
+                dataset = HazeRDDataset(root, f'test_crop_{str(crop_size)}', use_clahe=use_clahe)
             else:
                 raise NotImplementedError
 
@@ -57,7 +58,7 @@ def main():
                 net.load_state_dict(torch.load(os.path.join(ckpt_path, exp_name, args['snapshot'] + '.pth')))
 
             net.eval()
-            dataloader = DataLoader(dataset, batch_size=1)
+            dataloader = DataLoader(dataset, batch_size=test_bsz, num_workers=32, shuffle=False)
 
             psnrs, ssims = [], []
             loss_record = AvgMeter()
@@ -72,10 +73,7 @@ def main():
 
                 haze = haze.cuda()
 
-                if 'O-Haze' in name:
-                    res = sliding_forward(net, haze).detach()
-                else:
-                    res = net(haze).detach()
+                res = sliding_forward(net, haze).detach()
 
                 loss = criterion(res, gts.cuda())
                 loss_record.update(loss.item(), haze.size(0))
@@ -88,14 +86,14 @@ def main():
                     ssim = structural_similarity(gt, r, data_range=1, multichannel=True, channel_axis=2,
                                                  gaussian_weights=True, sigma=1.5, use_sample_covariance=False)
                     ssims.append(ssim)
-                    print('predicting for {} ({}/{}) [{}]: PSNR {:.4f}, SSIM {:.4f}'
-                          .format(name, idx + 1, len(dataloader), fs[i], psnr, ssim))
+                #     print('predicting for {} ({}/{}) [{}]: PSNR {:.4f}, SSIM {:.4f}'
+                #           .format(name, idx + 1, len(dataloader), fs[i], psnr, ssim))
 
-                for r, f in zip(res.cpu(), fs):
-                    to_pil(r).save(
-                        os.path.join(ckpt_path, exp_name,
-                                     '(%s) %s_%s' % (exp_name, name, args['snapshot']), '%s.png' % f))
-
+                # for r, f in zip(res.cpu(), fs):
+                #     to_pil(r).save(
+                #         os.path.join(ckpt_path, exp_name,
+                #                      '(%s) %s_%s' % (exp_name, name, args['snapshot']), '%s.png' % f))
+                print('[iter %d in %d]' % (idx + 1, len(dataloader)))
             print(f"[{name}] L1: {loss_record.avg:.6f}, PSNR: {np.mean(psnrs):.6f}, SSIM: {np.mean(ssims):.6f}")
 
 
